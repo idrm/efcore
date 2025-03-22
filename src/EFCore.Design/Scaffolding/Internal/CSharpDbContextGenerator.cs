@@ -79,13 +79,68 @@ namespace Microsoft.EntityFrameworkCore.Scaffolding.Internal
 
     foreach (var entityType in Model.GetEntityTypes().Where(e => !e.IsSimpleManyToManyJoinEntityType()))
     {
-
-            this.Write("    public virtual DbSet<");
+            this.Write("    internal virtual DbSet<");
             this.Write(NamespaceNamingHelper.CreateFullyQualifiedName(Options.ModelNamespace, entityType.Name));
             this.Write("> ");
             this.Write(this.ToStringHelper.ToStringWithCulture(entityType.GetDbSetName()));
             this.Write(" { get; set; }\r\n\r\n");
 
+    }
+
+    // add schema bundles
+    foreach (
+        var schemaName
+        in Model
+            .GetEntityTypes()
+            .Where(e => !e.IsSimpleManyToManyJoinEntityType())
+            .Select(e => NamespaceNamingHelper.CreateSchemaName(e.Name))
+            .Where(n => n != "")
+            .Distinct()
+            .OrderBy(n => n)
+    )
+    {
+        var schemaEntities = Model
+            .GetEntityTypes()
+            .Where(e => !e.IsSimpleManyToManyJoinEntityType())
+            .Where(e => NamespaceNamingHelper.CreateSchemaName(e.Name) == schemaName);
+
+        this.Write($"    public sealed class {schemaName}Entities\r\n");
+        this.Write($"    {{\r\n");
+
+        foreach (var entityType in schemaEntities)
+        {
+            this.Write("        public required DbSet<");
+            this.Write(NamespaceNamingHelper.CreateFullyQualifiedName(Options.ModelNamespace, entityType.Name));
+            this.Write("> ");
+            this.Write(NamespaceNamingHelper.CreateBaseEntityName(entityType.Name));
+            this.Write(" { get; init; }\r\n");
+
+        }
+
+        this.Write($"    }}\r\n\r\n");
+
+        this.Write($"    private {schemaName}Entities? _{schemaName}Entities;\r\n\r\n");
+
+        this.Write($"    public {schemaName}Entities {schemaName}\r\n");
+        this.Write($"    {{\r\n");
+        this.Write($"        get\r\n");
+        this.Write($"        {{\r\n");
+        this.Write($"            _{schemaName}Entities ??= new {schemaName}Entities\r\n");
+        this.Write($"            {{\r\n");
+
+        foreach (var entityType in schemaEntities)
+        {
+            this.Write("                ");
+            this.Write(NamespaceNamingHelper.CreateBaseEntityName(entityType.Name));
+            this.Write(" = ");
+            this.Write(this.ToStringHelper.ToStringWithCulture(entityType.GetDbSetName()));
+            this.Write(",\r\n");
+        }
+
+        this.Write($"            }};\r\n");
+        this.Write($"            return _{schemaName}Entities;\r\n");
+        this.Write($"        }}\r\n");
+        this.Write($"    }}\r\n");
     }
 
     if (!Options.SuppressOnConfiguring)
